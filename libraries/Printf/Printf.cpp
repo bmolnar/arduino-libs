@@ -1,50 +1,40 @@
-#include "Printf.h"
-
 #include <stdarg.h>
 #include "xlib.h"
+#include "xfmt.h"
+#include "xprint.h"
+
+#include "Printf.h"
 
 __XLIB_BEGIN_DECL
 
+typedef int (_printf_atarg_fn_t)(Printf *, const void *);
+
 static int
-_printf_xsop_open(xstream_t *xs, const char *mode, void *userdata)
+_printf_op_write(xprint_t *xp, const void *buf, size_t len)
 {
-    return 0;
-}
-static ssize_t
-_printf_xsop_write(xstream_t *xs, const void *buf, size_t count)
-{
-    Printf *xp = (Printf *) XSTREAM_PRIV(xs);
-    return (ssize_t) xp->write((const uint8_t *) buf, (size_t) count);
-}
-static ssize_t
-_printf_xsop_read(xstream_t *xs, void *buf, size_t count)
-{
-    return (ssize_t) 0;
+  Printf *pf = (Printf *) XPRINT_PRIV(xp);
+  return (int) pf->write((const uint8_t *) buf, len);
 }
 static int
-_printf_xsop_flush(xstream_t *xs)
+_printf_op_atwrap(xprint_t *xp, const xfmt_atarg_fn_t *fn, const void *ptr)
 {
-    return 0;
+  Printf *pf = (Printf *) XPRINT_PRIV(xp);
+  _printf_atarg_fn_t *myfn = (_printf_atarg_fn_t *) fn;
+  return (*myfn)(pf, ptr);
 }
-static int
-_printf_xsop_close(xstream_t *xs)
-{
-    return 0;
-}
-static xstream_ops_t _printf_xsops = {
-    .open  = &_printf_xsop_open,
-    .write = &_printf_xsop_write,
-    .read  = &_printf_xsop_read,
-    .flush = &_printf_xsop_flush,
-    .close = &_printf_xsop_close,
+static xprint_ops_t _printf_xpops = {
+  .write = &_printf_op_write,
+  .atwrap = &_printf_op_atwrap,
 };
 
 __XLIB_END_DECL
 
+
 size_t Printf::printfv(const char *fmt, va_list ap)
 {
-  xstream_t xs = XSTREAM_INIT(_printf_xsops, (void *) this);
-  int rv = xprintfv(&xs, fmt, ap);
+  xprint_t xp = XPRINT_INIT(_printf_xpops, (void *) this);
+
+  int rv = xprintfv(&xp, fmt, ap);
   return (size_t) rv;
 }
 size_t Printf::printf(const char *fmt, ...)

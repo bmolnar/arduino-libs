@@ -109,11 +109,7 @@ xfmt_handler_onconv(xfmt_handler_t *xp, const char *pos, const char *end, const 
         break;
     case '@':
         arg.v_at.fn = (const xfmt_atarg_fn_t *) va_arg(xap->ap, void *);
-        arg.v_at.args.argc = (uint8_t) fmtspec->prec;
-        for (i = 0; i < fmtspec->prec; i++)
-        {
-            arg.v_at.args.argv[i] = (xfmt_atarg_arg_t) va_arg(xap->ap, void *);
-        }
+        arg.v_at.ptr = (void *) va_arg(xap->ap, void *);
         break;
     case '%':
         return xfmt_handler_onchars(xp, end-1, end);

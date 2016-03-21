@@ -190,11 +190,11 @@ struct xfmt_atarg_arglist {
     xfmt_atarg_arg_t        argv[8];
 };
 typedef struct xfmt_atarg_arglist xfmt_atarg_arglist_t;
-typedef int                 (xfmt_atarg_fn_t)(void *, const xfmt_atarg_arglist_t *);
+typedef int                 (xfmt_atarg_fn_t)(void *, const void *);
 //typedef xfmt_atval_fn_t *   xfmt_atval_fnptr_t;
 struct xfmt_atarg {
     xfmt_atarg_fn_t *       fn;
-    xfmt_atarg_arglist_t    args;
+    void *                  ptr;
 };
 typedef struct xfmt_atarg xfmt_atarg_t;
 

@@ -9,7 +9,7 @@
 #include "xprint.h"
 
 static inline double
-xprintf_rounding(uint8_t digit)
+_xprint_rounding(uint8_t digit)
 {
     switch(digit) {
     case 0:
@@ -33,7 +33,7 @@ xprintf_rounding(uint8_t digit)
     }
 }
 static inline unsigned long
-xprintf_pow10ul(uint8_t pow)
+_xprint_pow10ul(uint8_t pow)
 {
     switch(pow) {
     case 0:
@@ -57,44 +57,54 @@ xprintf_pow10ul(uint8_t pow)
     }
 }
 static int
-xprintf_printchar(xstream_t *xp, char c)
+xprint_write(xprint_t *xp, const void *buf, size_t len)
 {
-    return (int) xstream_write(xp, (const void *) &c, sizeof(c));
+    xprint_ops_t *ops = XPRINT_OPS(xp);
+
+    if (ops->write != NULL)
+    {
+        return (*ops->write)(xp, buf, len);
+    }
+    else
+    {
+        return -XERR_NOSYS;
+    }
 }
 static int
-xprintf_printstrn(xstream_t *xp, const char *str, size_t len)
+xprint_printchar(xprint_t *xp, char c)
 {
-    return (int) xstream_write(xp, (const void *) str, len);
+    return xprint_write(xp, (const void *) &c, sizeof(c));
 }
 static int
-xprintf_printstrp(xstream_t *xp, const char *str, const char *end)
+xprint_printstrn(xprint_t *xp, const char *str, size_t len)
+{
+    return xprint_write(xp, (const void *) str, len);
+}
+static int
+xprint_printstr(xprint_t *xp, const char *str)
+{
+    return xprint_write(xp, (const void *) str, strlen(str));
+}
+static int
+xprint_printstrp(xprint_t *xp, const char *str, const char *end)
 {
   size_t len = (end > str) ? (end - str) : 0;
-  return (int) xstream_write(xp, (const void *) str, len);
+  return xprint_write(xp, (const void *) str, len);
 }
 static int
-xprintf_printstr(xstream_t *xp, const char *str)
-{
-    return (int) xstream_write(xp, (const void *) str, (size_t) strlen(str));
-}
-
-
-
-
-static int
-xprintf_printcarg(xstream_t *xp, xfmt_carg_t arg, const struct xfmt_spec *fmtspec)
+xprint_printcarg(xprint_t *xp, xfmt_carg_t arg, const struct xfmt_spec *fmtspec)
 {
     ((void) fmtspec);
-    return (int) xprintf_printchar(xp, (char) arg);
+    return xprint_printchar(xp, (char) arg);
 }
 static int
-xprintf_printsarg(xstream_t *xp, xfmt_sarg_t arg, const struct xfmt_spec *fmtspec)
+xprint_printsarg(xprint_t *xp, xfmt_sarg_t arg, const struct xfmt_spec *fmtspec)
 {
     ((void) fmtspec);
-    return (int) xprintf_printstr(xp, (const char *) arg);
+    return xprint_printstr(xp, (const char *) arg);
 }
 static int
-xprintf_printnum(xstream_t *xp, xfmt_unum_t num, int8_t sgn, const struct xfmt_spec *fmtspec)
+xprint_printnum(xprint_t *xp, xfmt_unum_t num, int8_t sgn, const struct xfmt_spec *fmtspec)
 {
     xfmt_base_t base = xfmt_spec_base(fmtspec);
     uint8_t radix = xfmt_base_radix(base);
@@ -140,28 +150,28 @@ xprintf_printnum(xstream_t *xp, xfmt_unum_t num, int8_t sgn, const struct xfmt_s
 
     while (leftspace-- > 0)
     {
-        len += xprintf_printchar(xp, ' ');
+        len += xprint_printchar(xp, ' ');
     }
     if (dosign)
     {
-        len += xprintf_printchar(xp, ((sgn > 0) ? '+' : '-'));
+        len += xprint_printchar(xp, ((sgn > 0) ? '+' : '-'));
     }
     while (padlen-- > 0)
     {
-        len += xprintf_printchar(xp, '0');
+        len += xprint_printchar(xp, '0');
     }
     if (endp > strp)
     {
-        len += xprintf_printstrp(xp, strp, endp);
+        len += xprint_printstrp(xp, strp, endp);
     }
     while (rightspace-- > 0)
     {
-        len += xprintf_printchar(xp, ' ');
+        len += xprint_printchar(xp, ' ');
     }
     return len;
 }
 static int
-xprintf_printfarg(xstream_t *xp, xfmt_farg_t num, const struct xfmt_spec *fmtspec)
+xprint_printfarg(xprint_t *xp, xfmt_farg_t num, const struct xfmt_spec *fmtspec)
 {
     uint8_t prec = fmtspec->prec;
     int8_t sgn = (num >= 0.0f) ? 1 : -1;
@@ -174,120 +184,164 @@ xprintf_printfarg(xstream_t *xp, xfmt_farg_t num, const struct xfmt_spec *fmtspe
         num = -num;
     }
 
-    num += xprintf_rounding(prec);
-    pow = xprintf_pow10ul(prec);
+    num += _xprint_rounding(prec);
+    pow = _xprint_pow10ul(prec);
     num_d = (unsigned long) num;
     num_r = ((unsigned long)(num * ((double) pow))) % pow;
 
-    len += xprintf_printnum(xp, num_d, sgn, fmtspec);
+    len += xprint_printnum(xp, num_d, sgn, fmtspec);
     if (prec > 0)
     {
-        len += xprintf_printchar(xp, '.'); 
+        len += xprint_printchar(xp, '.'); 
         while (prec-- > 0)
         {
             num_r *= 10;
             m = (uint8_t)(num_r / pow);
-            len += xprintf_printchar(xp, xfmt_base_digitchar(XFMT_BASE_10, m));
+            len += xprint_printchar(xp, xfmt_base_digitchar(XFMT_BASE_10, m));
             num_r -= (m * pow);
         }
     }
     return len;
 }
 static int
-xprintf_printatarg(xstream_t *xp, const xfmt_atarg_t *arg, const struct xfmt_spec *fmtspec)
+xprint_printatarg(xprint_t *xp, const xfmt_atarg_t *arg, const struct xfmt_spec *fmtspec)
 {
-    xprintf_atarg_fn_t *fn = (xprintf_atarg_fn_t *) arg->fn;
-    return (*fn)(xp, &arg->args);
+    xprint_ops_t *ops = XPRINT_OPS(xp);
+
+    if (ops->atwrap != NULL)
+    {
+      return (*ops->atwrap)(xp, arg->fn, arg->ptr);
+    }
+    else
+    {
+      xprint_atarg_fn_t *fn = (xprint_atarg_fn_t *) arg->fn;
+      return (*fn)(xp, arg->ptr);
+    }
 }
 
 
 
 
 
-struct xprintf_data {
-    xstream_t *xs;
+struct _xprint_data {
+    xprint_t *xp;
     const char *fmt;
 };
-#define XPRINTF_DATA_INIT(a_xs,a_fmt,a_ap) { .xs = (a_xs), .fmt = (a_fmt) }
+#define _XPRINT_DATA_INIT(a_xp,a_fmt,a_ap) { .xp = (a_xp), .fmt = (a_fmt) }
 static int
-xprintf_xfmt_ops_begin(xfmt_handler_t *xf, const char *pos)
+_xprint_xfmt_ops_begin(xfmt_handler_t *xf, const char *pos)
 {
-    struct xprintf_data *data = (struct xprintf_data *) XFMT_HANDLER_PRIV(xf);
+    struct _xprint_data *data = (struct _xprint_data *) XFMT_HANDLER_PRIV(xf);
     ((void) data);
     return 0;
 }
 static int
-xprintf_xfmt_ops_end(xfmt_handler_t *xf, const char *pos)
+_xprint_xfmt_ops_end(xfmt_handler_t *xf, const char *pos)
 {
-    struct xprintf_data *data = (struct xprintf_data *) XFMT_HANDLER_PRIV(xf);
+    struct _xprint_data *data = (struct _xprint_data *) XFMT_HANDLER_PRIV(xf);
     ((void) data);
     return 0;
 }
 static int
-xprintf_xfmt_ops_onval(xfmt_handler_t *xf, const char *pos, const char *end, const struct xfmt_spec *fmtspec, const xfmt_val_t *arg)
+_xprint_xfmt_ops_onval(xfmt_handler_t *xf, const char *pos, const char *end, const struct xfmt_spec *fmtspec, const xfmt_val_t *arg)
 {
-    struct xprintf_data *data = (struct xprintf_data *) XFMT_HANDLER_PRIV(xf);
+    struct _xprint_data *data = (struct _xprint_data *) XFMT_HANDLER_PRIV(xf);
     switch (fmtspec->conv) {
     case 'c':
-        return xprintf_printchar(data->xs, (char) arg->v_c);
+        return xprint_printchar(data->xp, (char) arg->v_c);
     case 'd':
     case 'i':
-        return xprintf_printnum(data->xs, (xfmt_unum_t)((arg->v_inum >= 0) ? arg->v_inum : -arg->v_inum), ((arg->v_inum >= 0) ? 1 : -1), fmtspec);
+        return xprint_printnum(data->xp, (xfmt_unum_t)((arg->v_inum >= 0) ? arg->v_inum : -arg->v_inum), ((arg->v_inum >= 0) ? 1 : -1), fmtspec);
     case 'o':
-        return xprintf_printnum(data->xs, arg->v_unum, 1, fmtspec);
+        return xprint_printnum(data->xp, arg->v_unum, 1, fmtspec);
     case 'u':
-        return xprintf_printnum(data->xs, arg->v_unum, 1, fmtspec);
+        return xprint_printnum(data->xp, arg->v_unum, 1, fmtspec);
     case 'x':
     case 'X':
-        return xprintf_printnum(data->xs, arg->v_unum, 1, fmtspec);
+        return xprint_printnum(data->xp, arg->v_unum, 1, fmtspec);
     case 'f':
-        return xprintf_printfarg(data->xs, arg->v_f, fmtspec);
+        return xprint_printfarg(data->xp, arg->v_f, fmtspec);
     case 's':
-        return xprintf_printsarg(data->xs, arg->v_s, fmtspec);
+        return xprint_printsarg(data->xp, arg->v_s, fmtspec);
     case '@':
-        return xprintf_printatarg(data->xs, &arg->v_at, fmtspec);
+        return xprint_printatarg(data->xp, &arg->v_at, fmtspec);
     case '%':
-        return xprintf_printchar(data->xs, '%');
+        return xprint_printchar(data->xp, '%');
     default:
         return -XERR_INVAL;
     }
 }
 static int
-xprintf_xfmt_ops_onchars(xfmt_handler_t *xf, const char *pos, const char *end)
+_xprint_xfmt_ops_onchars(xfmt_handler_t *xf, const char *pos, const char *end)
 {
-    struct xprintf_data *data = (struct xprintf_data *) XFMT_HANDLER_PRIV(xf);
+    struct _xprint_data *data = (struct _xprint_data *) XFMT_HANDLER_PRIV(xf);
     ((void) data);
-    return xprintf_printstrn(data->xs, pos, (end-pos));
+    return xprint_printstrn(data->xp, pos, (end-pos));
 }
-static xfmt_handler_ops_t xprintf_xfmt_ops = {
-    .op_begin     = &xprintf_xfmt_ops_begin,
-    .op_end       = &xprintf_xfmt_ops_end,
-    .op_onval     = &xprintf_xfmt_ops_onval,
-    .op_onchars   = &xprintf_xfmt_ops_onchars,
+static xfmt_handler_ops_t _xprint_xfmt_ops = {
+    .op_begin     = &_xprint_xfmt_ops_begin,
+    .op_end       = &_xprint_xfmt_ops_end,
+    .op_onval     = &_xprint_xfmt_ops_onval,
+    .op_onchars   = &_xprint_xfmt_ops_onchars,
 };
+
 int
-xprintf_vxprintf(xstream_t *xs, const char *format, va_list ap)
+xprint_printfv(xprint_t *xp, const char *format, va_list ap)
 {
-    struct xprintf_data      data = XPRINTF_DATA_INIT(xs, format, ap);
-    xfmt_handler_t             xf = XFMT_HANDLER_INIT(&xprintf_xfmt_ops, &data);
+    struct _xprint_data      data = _XPRINT_DATA_INIT(xp, format, ap);
+    xfmt_handler_t             xf = XFMT_HANDLER_INIT(&_xprint_xfmt_ops, &data);
     return xfmt_parsev(&xf, format, ap);
 }
 
 
 int
-xprintfv(xstream_t *xp, const char *format, va_list ap)
+xprintfv(xprint_t *xp, const char *format, va_list ap)
 {
-    return xprintf_vxprintf(xp, format, ap);
+    return xprint_printfv(xp, format, ap);
 }
 int
-xprintf(xstream_t *xp, const char *format, ...)
+xprintf(xprint_t *xp, const char *format, ...)
 {
     int rv;
     va_list ap;
 
     va_start(ap, format);
-    rv = xprintf_vxprintf(xp, format, ap);
+    rv = xprint_printfv(xp, format, ap);
     va_end(ap);
 
     return rv;
 }
+
+
+
+#if 0
+static int
+_xstream_xpop_write(xprint_t *xp, const void *buf, size_t len)
+{
+    xstream_t *xs = (xstream_t *) XPRINT_PRIV(xp);
+    return (int) xstream_write(xs, buf, len);
+}
+static xprint_ops_t _xstream_xpops = {
+    .write = &_xstream_xpop_write,
+    .atwrap = NULL,
+};
+int
+xstream_printfv(xstream_t *xs, const char *format, va_list ap)
+{
+    xprint_t xp = XPRINT_INIT(_xstream_xpops, xs);
+    return xprint_printfv(&xp, format, ap);
+}
+int
+xstream_printf(xstream_t *xs, const char *format, ...)
+{
+    xprint_t xp = XPRINT_INIT(_xstream_xpops, xs);
+    int rv;
+    va_list ap;
+
+    va_start(ap, format);
+    rv = xprint_printfv(&xp, format, ap);
+    va_end(ap);
+
+    return rv;
+}
+#endif
