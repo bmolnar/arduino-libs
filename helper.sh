@@ -19,9 +19,9 @@ TOOLS_DIRS+=("${HOME}/.arduino15/packages")
 ###
 ### project vars
 ###
-SKETCH="${PWD}/sketches/ad7606test/ad7606test.ino"
-#FQBN="arduino:avr:uno"
-FQBN="arduino:sam:arduino_due_x_dbg"
+SKETCH="${PWD}/sketches/PinTest/PinTest.ino"
+FQBN="arduino:avr:uno"
+#FQBN="arduino:sam:arduino_due_x_dbg"
 #LIBRARIES_DIRS+=("${PWD}/libraries")
 SKETCHBOOK_DIR="${PWD}"
 LIBRARIES_DIRS+=("./libraries")
